@@ -1,5 +1,5 @@
 
-log("Paxos Simulation");
+log("The Paxos Simulation");
 log("Controls: click to select, Delete to kill a message or a process, press any letter to have the selected process send a Request.");
 log("To edit the state of the simulation, change any variable in the text area and deselect it by pressing TAB or clicking outside.");
 
@@ -26,7 +26,6 @@ function Process(id){
 			case MSG_PREPARE:
 				if (msg.n > this.n){
 					this.n = msg.n;
-					this.learnCount = 0;
 					this.sendPromise(src);
 				}
 				break;
