@@ -51,6 +51,14 @@ function List(){
 		}
 		return elm;
 	}
+
+	this.peekFront = function(){
+		return this.front.value;
+	}
+
+	this.peekBack = function(){
+		return this.back.value;
+	}
 	
 	this.iterate = function(callback, stopCondition){
 		var it = this.front;
@@ -66,6 +74,24 @@ function List(){
 					return;
 				}
 				it = it.next;
+			}
+		}
+	}
+
+	this.iterateFromBack = function(callback, stopCondition){
+		var it = this.back;
+		if (stopCondition === undefined){
+			while(it != undefined){
+				callback(it.value);
+				it = it.prev;
+			}
+		}else{
+			while(it != undefined){
+				callback(it.value);
+				if (stopCondition(it.value)){
+					return;
+				}
+				it = it.prev;
 			}
 		}
 	}

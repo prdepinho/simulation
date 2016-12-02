@@ -60,3 +60,16 @@ function drawLine(ctx, x1, y1, x2, y2, color){
 	ctx.strokeStyle = color;
 	ctx.stroke();
 }
+
+function drawSelectionSquare(ctx, nodeX, nodeY, radius, color){
+	if (color === undefined){
+		color === "black";
+	}
+	ctx.beginPath();
+	var xa = nodeX - radius;
+	var ya = nodeY - radius;
+	var ext = radius * 2;
+	ctx.rect(xa, ya, ext, ext);
+	ctx.strokeStyle = color;
+	ctx.stroke();
+}

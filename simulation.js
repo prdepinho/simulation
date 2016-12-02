@@ -255,8 +255,16 @@ function expDist(lambda){
 
 
 // DEBUGGING LOG 
+// On a new line
 function log(msg){
 	var text = document.getElementById("logText");
 	text.value = text.value + "\n" + msg;
+	text.scrollTop = text.scrollHeight;
+}
+
+// On previous line
+function logAppend(msg){
+	var text = document.getElementById("logText");
+	text.value = text.value + msg;
 	text.scrollTop = text.scrollHeight;
 }
