@@ -13,6 +13,9 @@
 		Simulation Speed: <input id="speedSlider" type="range" min="5" max="100" step="5" onchange="setSpeedMult()"/>
 		<input type="button" value="Start/Stop (space)" onclick="onStartButtonClick()" name="startButton">
 		<p>
+		Lambda: <input id="lambdaSlider" type="range" min="5" max="200" step="5" onchange="setLambda()"/>
+		<input type="button" value="Set/Unset random" onclick="onRandomSpeedClick()" name="randomSwitch">
+		<p>
 		<textarea cols="90" rows="4" id="logText">
 			Log:
 		</textarea>

@@ -89,7 +89,10 @@ function Communication(){
 		msg.dstY = dst.y;
 		msg.payload = payload;
 		
-		var time = expDist(this.deliveryTime);
+		var time = this.deliveryTime;
+		if(RANDOM_SPEED){
+			time += this.deliveryTime * expDist(LAMBDA);
+		}
 		msg.updatesToArrive = Math.round(FRAME_RATE * time / 1000);
 		msg.speedX = (msg.dstX - msg.x) / msg.updatesToArrive; // pixels per frame
 		msg.speedY = (msg.dstY - msg.y) / msg.updatesToArrive; // pixels per frame

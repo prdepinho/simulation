@@ -4,10 +4,21 @@ var FRAME_RATE = 60; // frames per sec
 var FRAME = 0;
 
 var SPEED_MULT = 0.5;
-         
 function setSpeedMult(){
 	SPEED_MULT = document.getElementById("speedSlider").value / 100;
 	log("Speed Multiplier: " + SPEED_MULT);
+}
+
+var RANDOM_SPEED = false; // either adds randomness to message speed or not
+function onRandomSpeedClick(){
+	RANDOM_SPEED = ! RANDOM_SPEED;
+	log("Random message speed: " + RANDOM_SPEED);
+}
+
+var LAMBDA = 2; // lambda for exponential function that adds to message speed
+function setLambda(){
+	LAMBDA = document.getElementById("lambdaSlider").value / 100;
+	log("Lambda: " + LAMBDA);
 }
 
 var STARTED = false;
@@ -29,6 +40,7 @@ function removeElement(elm){
 
 // START UP
 document.getElementById("speedSlider").value = SPEED_MULT * 100;
+document.getElementById("lambdaSlider").value = LAMBDA * 100;
 
 
 
@@ -250,7 +262,7 @@ function isInCircle(x, y, cx, cy, cradius){
 // Exponential distribution.
 function expDist(lambda){
 	// return Math.log(1 - Math.random()) / (-lambda);
-	return lambda;
+	return Math.log(1/Math.random())/ lambda;
 }
 
 

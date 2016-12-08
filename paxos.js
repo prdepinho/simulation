@@ -267,8 +267,8 @@ function onMouseClick(x, y){
 // DRAWING
 
 function drawCanvas(ctx){
-	drawMessages(ctx, messages);
 	drawProcessesL(ctx, processes);
+	drawMessages(ctx, messages);
 }
 
 function drawProcessesL(ctx, processes){
