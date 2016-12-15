@@ -119,3 +119,77 @@ function List(){
 	}
 	
 }
+
+// ARRAY DICTIONARY
+// A dictionary of arrays. It uses List as its data structure because
+// it works better than a tree with monotonically increasing keys.
+// It automatically sets an array when appending a value with a new key.
+// Overwrite ArrayDictionary.keyEqual(keyA, keyB) to compare object keys.
+function ArrayDictionary(){
+
+	this.list = new List(); // of tuple {key,array}
+
+	this.keyEqual = function(keyA, keyB){
+		return keyA === keyB;
+	}
+
+	this.append = function(key, value){
+		var self = this;
+		var found = false;
+		this.list.iterateFromBack(
+			callback = function(val){
+				if (self.keyEqual(val.key, key)){
+					val.array.push(value);
+					found = true;
+				}
+		}, 
+			stopcondition = function(val){
+				return found;
+		});
+		if (!found){
+			this.list.push({key:key, array:[value]});
+		}
+	}
+
+	this.length = function(key){
+		var len = 0;
+		var self = this;
+		var found = false;
+		this.list.iterateFromBack(
+			callback = function(val){
+				if (self.keyEqual(val.key, key)){
+					len = val.array.length;
+					found = true;
+				}
+		}, 
+			stopcondition = function(val){
+				return found;
+		});
+		return len;
+	}
+
+	this.getArray = function(key){
+		var array = null;
+		var self = this;
+		var found = false;
+		this.list.iterateFromBack(
+			callback = function(val){
+				if (self.keyEqual(val.key, key)){
+					array = val.array;
+					found = true;
+				}
+		}, 
+			stopcondition = function(val){
+				return found;
+		});
+		return array;
+	}
+
+	this.deleteArray = function(key){
+		var self = this;
+		this.list.equal = function(a,b){
+			return self.keyEqual(a.key, b.key);
+		}
+		this.list.removeFromBack({key:key, array:[]});
+	}
+}
