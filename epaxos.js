@@ -12,9 +12,16 @@ function Process(id){
 	
 	this.available = true;
 	this.epoch = 0;
-	this.cmds = []; // Matrix of Instances
+	this.cmds = []; // matrix of objects {instance, ballot}
 	this.i = -1; // instance number
-	
+
+	this.responses = {}; // dictionary where key is [L,i] and value is a list of messages}
+	this.equalResponses = {}; 
+
+	this.addCmd = function(L, i, inst, ballot){
+		this.cmds[L][i] = {instance:inst, ballot:ballot};
+	}
+
 	this.recv = function(msg, src){
 		if (! this.available){
 			return;
@@ -26,14 +33,25 @@ function Process(id){
 			case MSG_READ:
 				break;
 			case MSG_PRE_ACCEPT:
-				if (src === this){
-					break;
-				}
 				var instance = msg.instance.copy();
+				var ballot = msg.ballot.copy();
 				instance.deps = this.updateDependencies(instance.cmd, instance.deps);
 				instance.seq = this.getSequenceNumber(instance.deps);
-				this.cmds[src.id][msg.i] = instance;
-				com.send(new EPaxosMessage(MSG_PRE_ACCEPT_OK, instance.copy(), msg.i), this, src);
+				this.addCmd(src.id, msg.i, instance, ballot);
+				com.send(new EPaxosMessage(MSG_PRE_ACCEPT_OK, instance.copy(), msg.i, ballot), this, src);
+				break;
+			case MSG_PRE_ACCEPT_OK:
+				var inst = this.cmds[this.id][msg.i];
+				if (msg.ballot.isEqual(inst.ballot)){
+					if(inst.instance.isEqual(msg.instance)){
+						this.equalResponses[[this.id, msg.i]] = msg;
+						if (this.equalResponses[this.id, msg.i])
+					}
+				}
+				break;
+			case MSG_ACCEPT:
+				break;
+			case MSG_ACCEPT_OK:
 				break;
 		}
 		updateStateText();
@@ -45,9 +63,9 @@ function Process(id){
 		var deps = this.getDependencies(cmd);
 		var seq = this.getSequenceNumber(deps);
 		var ballot = new Ballot(this.epoch, 0, this.id);
-		var instance = new Instance(cmd, seq, deps, CMD_PRE_ACCEPTED, ballot, client, objId);
-		this.cmds[this.id][this.i] = instance;
-		this.sendToFastQuorum(new EPaxosMessage(MSG_PRE_ACCEPT, instance.copy(), this.i));
+		var instance = new Instance(cmd, seq, deps, CMD_PRE_ACCEPTED, client, objId);
+		this.addCmd(this.id, this.i, instance, ballot);
+		this.sendToFastQuorum(new EPaxosMessage(MSG_PRE_ACCEPT, instance, this.i, ballot));
 	}
 
 	this.phase2 = function(){
@@ -67,7 +85,7 @@ function Process(id){
 		var deps = [];
 		for (i = 0; i < this.cmds.length; i++){
 			for (j = 0; j < this.cmds[i].length; j++){
-				deps.push(this.cmds[i][j]);
+				deps.push(new Dep(i,j));
 			}
 		}
 		return deps;
@@ -79,10 +97,10 @@ function Process(id){
 		for (i = 0; i < this.cmds.length; i++){
 			for (j = 0; j < this.cmds[i].length; j++){
 				for (k = 0; k < deps.length; k++){
-					isIn  = isIn || deps[k].isEqual(this.cmds[i][j]);
+					isIn  = isIn || deps[k].isEqualCoords(i,j);
 				}
 				if (!isIn){
-					newDeps.push(this.cmds[i][j]);
+					newDeps.push(new Dep(i,j));
 				}else{
 					isIn = false;
 				}
@@ -113,6 +131,9 @@ function Process(id){
 		var self = this;
 		var fastQuorum = numberOfProcesses -1; // 2F
 		processes.iterate(callback = function(proc){
+			if (self === proc){
+				return
+			}
 			com.send(msg, self, proc);
 			fastQuorum--;
 		}, stopCondition = function(proc){
@@ -123,7 +144,7 @@ function Process(id){
 
 	this.sendToSlowQuorum = function(msg){
 		var self = this;
-		var slowQuorum = Math.floor((numberOfProcesses - 1) / 2); // f+1
+		var slowQuorum = Math.floor((numberOfProcesses - 1) / 2); // F
 		processes.iterate(callback = function(proc){
 			com.send(msg, self, proc);
 			slowQuorum--;
@@ -189,17 +210,6 @@ function Ballot(epoch, b, pid){
 	this.b = b;
 	this.pid = pid;
 
-	this.compare = function(ballot){
-		var dif = this.epoch - ballot.epoch;
-		if (dif === 0){
-			dif = this.b - ballot.b;
-			if (dif === 0){
-				dif = this.pid - ballot.pid;
-			}
-		}
-		return dif;
-	}
-
 	this.toString = function(){
 		return "("+ this.epoch +"."+ this.b +"."+ this.pid +")";
 	}
@@ -222,18 +232,30 @@ function Ballot(epoch, b, pid){
 	}
 }
 
+// DEPENDENCY are coordenates to an instance in cmds.
+function Dep(L, i){
+	this.L = L;
+	this.i = i;
+
+	this.isEqual = function(dep){
+		return this.L === dep.L && this.i === dep.i;
+	}
+	this.isEqualCoords = function(L,i){
+		return this.L === L && this.i === i;
+	}
+}
+
 // INSTANCE
 function Instance(cmd, seq, deps, state, ballot, client, objId){
 	this.cmd = cmd;
 	this.seq = seq;
-	this.deps = deps; 
+	this.deps = deps; // an array of Dep objects that are the coordenates for instance in cmds[dep.L][dep.i]
 	this.state = state;
-	this.ballot = ballot;
 	this.client = client;
 	this.objId = objId;
 
 	this.copy = function(){
-		return new Instance(this.cmd, this.seq, this.deps.slice(), this.state, this.ballot.copy(), this.client, this.objId);
+		return new Instance(this.cmd, this.seq, this.deps.slice(), this.state, this.client, this.objId);
 	}
 
 	this.isEqual = function(inst){
@@ -241,8 +263,7 @@ function Instance(cmd, seq, deps, state, ballot, client, objId){
 			&& this.seq === inst.seq
 			&& this.state === inst.state
 			&& this.client === inst.client
-			&& this.objId === inst.objId
-			&& this.ballot.isEqual(inst.ballot);
+			&& this.objId === inst.objId;
 		if (this.deps.length === inst.deps.length){
 			for (i = 0; i < this.deps.length; i++){
 				ret = ret && this.deps[i].isEqual(inst.deps[i]);
@@ -269,10 +290,11 @@ function cmdStateToString(state){
 }
 
 // MESSAGES
-function EPaxosMessage(type, instance, i){
+function EPaxosMessage(type, instance, i, ballot){
 	this.type = type;
 	this.instance = instance;
 	this.i = i;
+	this.ballot = ballot;
 }
 
 function EPaxosClientMessage(type, cmd, client, objId){
@@ -355,13 +377,13 @@ function updateStateText(){
 			for (i = 0; i < proc.cmds.length; i++){
 				text += '	  ['
 				for (j = 0; j < proc.cmds[i].length; j++){
-					var inst = proc.cmds[i][j];
+					var inst = proc.cmds[i][j].instance;
 					text += '[';
 					text += '"' + inst.cmd + '",';
 					text += '' + inst.seq + ",";
 					text += '[';
 					for (k = 0; k < inst.deps.length; k++){
-						text += '"' + inst.deps[k].cmd + '",';
+						text += '(' + inst.deps[k].L + ',' + inst.deps[k].i+ '),';
 					}
 					if (k > 0){
 						text = text.slice(0, -1);
@@ -655,12 +677,12 @@ function drawMessages(ctx, messages){
 			var inst = p.instance;
 			label += "("+ inst.cmd +", "+ inst.seq +", [";
 			for (i = 0; i < inst.deps.length; i++){
-				label += "" + inst.deps[i].cmd + ",";
+				label += "(" + inst.deps[i].L + "," + inst.deps[i].i + "),";
 			}
 			if (i > 0){
 				label = label.slice(0, -1);
 			}
-			label += "], "+ p.i +", "+ inst.ballot.toString() +")";
+			label += "], "+ p.i +", "+ p.ballot.toString() +")";
 		}
 		drawNode(ctx, msg.x, msg.y, "m", label, msg.radius, "lightgreen", "black", "black"); 
 	});
