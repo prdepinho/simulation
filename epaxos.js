@@ -15,11 +15,12 @@ function Process(id){
 	this.cmds = []; // matrix of objects {instance, ballot}
 	this.i = -1; // instance number
 
-	this.responses = {}; // dictionary where key is [L,i] and value is a list of messages}
-	this.equalResponses = {}; 
+	this.responses = new ArrayDictionary(); // dictionary where key is InstRef(L,i) and value is a list of instances received from messages. The first element is {equalCount, totalCount} that serve as metadata.
 
-	this.addCmd = function(L, i, inst, ballot){
-		this.cmds[L][i] = {instance:inst, ballot:ballot};
+	this.init = function(){
+		this.responses.keyEqual = function(a,b){
+			return a.L === b.L && a.i === b.i;
+		};
 	}
 
 	this.recv = function(msg, src){
@@ -37,26 +38,51 @@ function Process(id){
 				var ballot = msg.ballot.copy();
 				instance.deps = this.updateDependencies(instance.cmd, instance.deps);
 				instance.seq = this.getSequenceNumber(instance.deps);
-				this.addCmd(src.id, msg.i, instance, ballot);
+				this.setCmd(src.id, msg.i, instance, ballot);
 				com.send(new EPaxosMessage(MSG_PRE_ACCEPT_OK, instance.copy(), msg.i, ballot), this, src);
 				break;
 			case MSG_PRE_ACCEPT_OK:
-				var inst = this.cmds[this.id][msg.i];
-				if (msg.ballot.isEqual(inst.ballot)){
-					if(inst.instance.isEqual(msg.instance)){
-						this.equalResponses[[this.id, msg.i]] = msg;
-						if (this.equalResponses[this.id, msg.i])
+				var buf = this.responses.getArray(new InstRef(this.id, msg.i));
+				if (msg.ballot.isEqual(this.cmds[this.id][msg.i].ballot)
+						&& this.cmds[this.id][msg.i].instance.state === CMD_PRE_ACCEPTED){
+					buf.push(msg.instance.copy());
+					buf[0].totalCount++;
+					if(this.cmds[this.id][msg.i].instance.isEqual(msg.instance)){
+						buf[0].equalCount++;
+					}
+					if(buf[0].equalCount === numberOfProcesses -1){
+						this.commit(msg.i);
+					}else
+					if(buf[0].equalCount < buf[0].totalCount &&
+							buf[0].totalCount === Math.floor(numberOfProcesses / 2)){
+						this.phase2(msg.i);
 					}
 				}
 				break;
 			case MSG_ACCEPT:
+				var instance = msg.instance.copy();
+				var ballot = msg.ballot.copy();
+				this.setCmd(src.id, msg.i, instance, ballot);
+				com.send(new EPaxosMessage(MSG_ACCEPT_OK, msg.i, instance, ballot), this, src);
 				break;
 			case MSG_ACCEPT_OK:
+				var buf = this.responses.getArray(new InstRef(this.id, msg.i));
+				if (msg.ballot.isEqual(this.cmds[this.id][msg.i].ballot)
+						&& this.cmds[this.id][msg.i].instance.state === CMD_ACCEPTED){
+					buf.push(msg.instance.copy());
+					buf[0].totalCount++;
+					if(buf[0].totalCount === Math.floor(numberOfProcesses / 2)){
+						this.commit(msg.i);
+					}
+				}
+				break;
+			case MSG_COMMIT:
+				this.setCmd(src.id, msg.i, msg.instance.copy(), msg.ballot.copy());
 				break;
 		}
 		updateStateText();
 	}
-	
+
 	// PHASES
 	this.phase1 = function(cmd, client, objId){
 		this.i++;
@@ -64,14 +90,30 @@ function Process(id){
 		var seq = this.getSequenceNumber(deps);
 		var ballot = new Ballot(this.epoch, 0, this.id);
 		var instance = new Instance(cmd, seq, deps, CMD_PRE_ACCEPTED, client, objId);
-		this.addCmd(this.id, this.i, instance, ballot);
+		this.setCmd(this.id, this.i, instance, ballot);
+		this.prepareResponsesBuf(this.id, this.i);
 		this.sendToFastQuorum(new EPaxosMessage(MSG_PRE_ACCEPT, instance, this.i, ballot));
 	}
 
-	this.phase2 = function(){
+	this.phase2 = function(i){
+		var instance = this.cmds[this.id][i].instance;
+		var ballot = this.cmds[this.id][i].ballot;
+		var buf = this.responses.getArray(new InstRef(this.id, i));
+		for (i = 1; i < buf.length; i++){
+			instance.deps = this.updateDependencies(instance.cmd, buf[i].deps);
+		}
+		instance.seq = this.getSequenceNumber(instance.deps);
+		instance.state = CMD_ACCEPTED;
+		this.prepareResponsesBuf(this.id, i);
+		this.sendToSlowQuorum(new EPaxosMessage(MSG_ACCEPT, instance, i, ballot));
 	}
 
-	this.commit = function(){
+	this.commit = function(i){
+		var instance = this.cmds[this.id][i].instance;
+		var ballot   = this.cmds[this.id][i].ballot;
+		instance.state = CMD_COMMITTED;
+		this.responses.deleteArray(new InstRef(this.id, i));
+		this.sendToAllReplicas(new EPaxosMessage(MSG_COMMIT, instance, i, ballot));
 	}
 
 	this.explicitPrepare = function(){
@@ -81,11 +123,23 @@ function Process(id){
 	}
 
 	//ancillary functions
+	this.setCmd = function(L, i, inst, ballot){
+		this.cmds[L][i] = {instance:inst, ballot:ballot};
+	}
+
+	this.prepareResponsesBuf = function(L, i){
+		var iref = new InstRef(L, i);
+		if(this.responses.length(iref) != 0){
+			this.responses.deleteArray(iref);
+		}
+		this.responses.append(iref, {equalCount:0, totalCount:0});
+	}
+	
 	this.getDependencies = function(cmd){
 		var deps = [];
 		for (i = 0; i < this.cmds.length; i++){
 			for (j = 0; j < this.cmds[i].length; j++){
-				deps.push(new Dep(i,j));
+				deps.push(new InstRef(i,j));
 			}
 		}
 		return deps;
@@ -100,7 +154,7 @@ function Process(id){
 					isIn  = isIn || deps[k].isEqualCoords(i,j);
 				}
 				if (!isIn){
-					newDeps.push(new Dep(i,j));
+					newDeps.push(new InstRef(i,j));
 				}else{
 					isIn = false;
 				}
@@ -116,7 +170,7 @@ function Process(id){
 		var seq = 0;
 		for (i = 0; i < this.cmds.length; i++){
 			for (j = 0; j < this.cmds[i].length; j++){
-				var inst = this.cmds[i][j];
+				var inst = this.cmds[i][j].instance;
 				if (seq < inst.seq){
 					seq = inst.seq;
 				}
@@ -146,6 +200,9 @@ function Process(id){
 		var self = this;
 		var slowQuorum = Math.floor((numberOfProcesses - 1) / 2); // F
 		processes.iterate(callback = function(proc){
+			if(self === proc){
+				return;
+			}
 			com.send(msg, self, proc);
 			slowQuorum--;
 		}, stopCondition = function(proc){
@@ -154,10 +211,7 @@ function Process(id){
 	}
 
 	this.sendToAllReplicas = function(msg){
-		var self = this;
-		processes.iterate(callback = function(proc){
-			com.send(msg, self, proc);
-		});
+		com.bcastL(msg, this, processes);
 	}
 }
 
@@ -232,24 +286,28 @@ function Ballot(epoch, b, pid){
 	}
 }
 
-// DEPENDENCY are coordenates to an instance in cmds.
-function Dep(L, i){
+// Instance Reference are coordenates to an instance in cmds, which may be used as dependencies.
+function InstRef(L, i){
 	this.L = L;
 	this.i = i;
 
-	this.isEqual = function(dep){
-		return this.L === dep.L && this.i === dep.i;
+	this.isEqual = function(iref){
+		return this.L === iref.L && this.i === iref.i;
 	}
 	this.isEqualCoords = function(L,i){
 		return this.L === L && this.i === i;
 	}
+
+	this.toString = function(){
+		return "(" + this.L + "," + this.i + ")";
+	}
 }
 
 // INSTANCE
-function Instance(cmd, seq, deps, state, ballot, client, objId){
+function Instance(cmd, seq, deps, state, client, objId){
 	this.cmd = cmd;
 	this.seq = seq;
-	this.deps = deps; // an array of Dep objects that are the coordenates for instance in cmds[dep.L][dep.i]
+	this.deps = deps; // an array of InstRef objects that are the coordenates for instance in cmds[dep.L][dep.i]
 	this.state = state;
 	this.client = client;
 	this.objId = objId;
@@ -327,6 +385,7 @@ var numberOfProcesses = 5;
 var processes = new List();
 for (i = 0; i < numberOfProcesses; i++){
 	var proc = new Process(i);
+	proc.init();
 	for (j = 0; j < numberOfProcesses; j++){
 		proc.cmds[j] = []; // array of Instances
 	}
@@ -677,7 +736,7 @@ function drawMessages(ctx, messages){
 			var inst = p.instance;
 			label += "("+ inst.cmd +", "+ inst.seq +", [";
 			for (i = 0; i < inst.deps.length; i++){
-				label += "(" + inst.deps[i].L + "," + inst.deps[i].i + "),";
+				label += inst.deps[i].toString() + ",";
 			}
 			if (i > 0){
 				label = label.slice(0, -1);
