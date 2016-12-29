@@ -160,7 +160,7 @@ function Process(id){
 		var deps = [];
 		for (var i = 0; i < this.cmds.length; i++){
 			for (var j = 0; j < this.cmds[i].length; j++){
-				deps.push(new Dep(i, j, this.cmds[i][j].instance.seq));
+				deps.push(this.cmds[i][j].instance.copy());
 			}
 		}
 		return deps;
@@ -173,11 +173,10 @@ function Process(id){
 				var inst = this.cmds[i][j].instance;
 				if (cmd != inst.cmd){
 					for (var k = 0; k < deps.length; k++){
-						isIn  = isIn || deps[k].ref.isEqualCoords(i,j) 
-							&& deps[k].seq === inst.seq;
+						isIn  = isIn || deps[k].isEqual(inst);
 					}
 					if (!isIn){
-						deps.push(new Dep(i, j, inst.seq));
+						deps.push(inst.copy());
 					}else{
 						isIn = false;
 					}
@@ -319,7 +318,7 @@ function Ballot(epoch, b, pid){
 	}
 }
 
-// Instance Reference are coordenates to an instance in cmds, which may be used as dependencies.
+// Instance Reference are coordenates to an instance in cmds
 function InstRef(L, i){
 	this.L = L;
 	this.i = i;
@@ -336,24 +335,11 @@ function InstRef(L, i){
 	}
 }
 
-// Instance of a dependency in deps array, where ref is an InstRef object.
-function Dep(L, i, seq){
-	this.ref = new InstRef(L,i);
-	this.seq = seq;
-
-	this.isEqual = function(dep){
-		return this.ref.isEqual(dep.ref) && this.seq === dep.seq;
-	}
-	this.toString = function(){
-		return "(" + this.ref.L + "," + this.ref.i + ":" + this.seq + ")";
-	}
-}
-
 // INSTANCE
 function Instance(cmd, seq, deps, state, client, objId){
 	this.cmd = cmd;
 	this.seq = seq;
-	this.deps = deps; // an array of Dep objects.
+	this.deps = deps; // an array of Instances
 	this.state = state;
 	this.client = client;
 	this.objId = objId;
@@ -376,6 +362,10 @@ function Instance(cmd, seq, deps, state, client, objId){
 			return false;
 		}
 		return ret;
+	}
+
+	this.toString = function(){
+		return '"' + this.cmd + '"';
 	}
 }
 
